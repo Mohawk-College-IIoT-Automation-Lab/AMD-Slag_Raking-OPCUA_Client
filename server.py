@@ -16,7 +16,7 @@ async def main():
     # setup our server
     server = Server()
     await server.init()
-    server.set_endpoint("opc.tcp://0.0.0.0:4840/freeopcua/server/")
+    server.set_endpoint("opc.tcp://172.0.0.1:4840")
 
     # set up our own namespace, not really necessary but should as spec
     uri = "http://examples.freeopcua.github.io"
@@ -24,10 +24,16 @@ async def main():
 
     # populating our address space
     # server.nodes, contains links to very common nodes like objects and root
-    motor = await server.nodes.objects.add_object(idx, "Motor")
-    rpm = await motor.add_variable(idx, "Speed", 6.7)
-    # Set rpmiable to be writable by clients
-    await rpm.set_writable()
+    production_line = await server.nodes.objects.add_object(idx,  bname = "PLine", nodeid = "ns=2;i=1",)
+    state = await production_line.add_variable(
+            nodeid = "ns=2;i=2",
+            bname = "State",
+            val = 0,
+            datatype = int
+            )
+    
+    # Set state to be writable by clients
+    await state.set_writable()
     await server.nodes.objects.add_method(
         ua.NodeId("ServerMethod", idx),
         ua.QualifiedName("ServerMethod", idx),
@@ -39,9 +45,7 @@ async def main():
     async with server:
         while True:
             await asyncio.sleep(1)
-            new_val = await rpm.get_value() + 0.1
-            _logger.info("Set value of %s to %.1f", rpm, new_val)
-            await rpm.write_value(new_val)
+            _logger.info(f"Current State: {state}")
 
 
 if __name__ == "__main__":
