@@ -1,8 +1,12 @@
 #!/home/daniil/miniconda3/envs/opcua/bin/python
-from PyQt6.QtCore import QSize, Qt
 from asyncua import Client
 import asyncio
 from enum import StrEnum
+
+# Only needed for access to command line arguments
+import sys
+
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
         QApplication, 
         QWidget,
@@ -10,15 +14,85 @@ from PyQt6.QtWidgets import (
         QPushButton,
         QMainWindow,
         QLabel,
-        QComboBox,
-        QListWidget,
         QVBoxLayout,
         QHBoxLayout,
         QButtonGroup,
         QSizePolicy,
         )
-# Only needed for access to command line arguments
-import sys
+
+# 1. The Callback Class
+class SubscriptionHandler:
+    """This class is called by the OPC UA client when data changes."""
+    def __init__(self, signal):
+        self.signal = signal
+
+    def datachange_notification(self, node, val, data):
+        # We emit the Qt Signal to update the UI safely from the background
+        self.signal.emit(str(val))
+
+# 2. The Worker Thread
+class OPCWorker(QThread):
+    value_changed = pyqtSignal(str)
+    error_occurred = pyqtSignal(str)
+
+    def __init__(self, url, node_id, lookup):
+        super().__init__()
+        self.url = url
+        self.node_id = node_id
+        self.lookup = lookup
+        self.loop = None
+        self._client = None
+
+    def run(self):
+        """Main entry point for the thread"""
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+        self.loop.run_until_complete(self.monitor_opc())
+
+    async def monitor_opc(self):
+        try:
+            async with Client(url=self.url) as client:
+                self._client = client
+                node =  client.get_node(self.node_id)
+                
+                # Setup Subscription
+                handler = SubscriptionHandler(self.value_changed)
+                subscription = await client.create_subscription(500, handler)
+                await subscription.subscribe_data_change(node)
+
+                # Keep the thread alive while the connection is open
+                while True:
+                    await asyncio.sleep(1)
+        except Exception as e:
+            self.error_occurred.emit(str(e))
+
+    def write_value(self, index):
+        """Thread-safe way to write from the UI"""
+        if self._client and self.loop:
+            value_to_write = self.lookup[index]
+            # Schedules the coroutine to run on the worker's event loop
+            asyncio.run_coroutine_threadsafe(
+                self._set_node_value(value_to_write), 
+                self.loop
+            )
+
+    async def _set_node_value(self, val):
+        # 1. Guard against 'None' if connection isn't ready yet
+        if self._client is None:
+            print("Error: Client not connected yet.")
+            return
+
+        try:
+            # 2. Get the node object (synchronous in asyncua)
+            node = self._client.get_node(self.node_id)
+            
+            # 3. Write the value (asynchronous)
+            await node.set_value(val)
+            print(f"Successfully wrote {val} to server.")
+        except Exception as e:
+            self.error_occurred.emit(f"Write failed: {e}")
+
+
 
 class State(StrEnum):
     IDLE = "IDLE"
@@ -116,12 +190,18 @@ class MainWindow(QMainWindow):
                 font-weight: bold;
             }
         """)
+
+        self.worker = OPCWorker(self.opc_url, self.node_id, self.lookup)
+        # Connect the subscription signal directly to your label
+        self.worker.value_changed.connect(self.process_state.setText)
+        self.worker.start()
         
-    def update_state(self, val):
-            """Wrapper to run the async write task"""
-            print(f"Switching state to: {val}")
-            asyncio.run(self.write_opc_value(val))
-            self.process_state.setText(f"Last Command: {val}")
+    # Updated update_state
+    def update_state(self, val_id):
+        """Clean and fast: just sends the command to the background"""
+        print(f"UI requesting change to: {val_id}")
+        self.worker.write_value(val_id)
+
 
     async def write_opc_value(self, value):
         """The actual OPC UA async communication"""
@@ -132,6 +212,16 @@ class MainWindow(QMainWindow):
                 await node.set_value(self.lookup[value])
         except Exception as e:
             print(f"OPC UA Error: {e}")
+
+    async def read_opc_value(self):
+        try:
+            async with Client(url=self.opc_url) as client:
+                node = client.get_node(self.node_id)
+                return await node.read_value()
+        except Exception as e:
+            print(f"OPC UA Error: {e}")
+            return None
+                
 
 
 app = QApplication(sys.argv)
