@@ -6,9 +6,6 @@ from asyncua import Server, ua
 from asyncua.common.methods import uamethod
 
 
-@uamethod
-def func(parent, value):
-    return value * 2
 
 
 async def main():
@@ -16,7 +13,7 @@ async def main():
     # setup our server
     server = Server()
     await server.init()
-    server.set_endpoint("opc.tcp://172.0.0.1:4840")
+    server.set_endpoint("opc.tcp://127.0.0.1:4840")
 
     # set up our own namespace, not really necessary but should as spec
     uri = "http://examples.freeopcua.github.io"
@@ -24,28 +21,22 @@ async def main():
 
     # populating our address space
     # server.nodes, contains links to very common nodes like objects and root
-    production_line = await server.nodes.objects.add_object(idx,  bname = "PLine", nodeid = "ns=2;i=1",)
+    production_line = await server.nodes.objects.add_object(nodeid="ns=2;i=1",
+                                                            bname = "PLine",)
     state = await production_line.add_variable(
-            nodeid = "ns=2;i=2",
+            nodeid="ns=2;i=10",
             bname = "State",
-            val = 0,
-            datatype = int
+            val = "IDLE",
             )
     
     # Set state to be writable by clients
     await state.set_writable()
-    await server.nodes.objects.add_method(
-        ua.NodeId("ServerMethod", idx),
-        ua.QualifiedName("ServerMethod", idx),
-        func,
-        [ua.VariantType.Int64],
-        [ua.VariantType.Int64],
-    )
     _logger.info("Starting server!")
     async with server:
         while True:
             await asyncio.sleep(1)
-            _logger.info(f"Current State: {state}")
+            value = await state.read_value()
+            _logger.info(f"Current State: {value}")
 
 
 if __name__ == "__main__":

@@ -1,7 +1,8 @@
 #!/home/daniil/miniconda3/envs/opcua/bin/python
 from PyQt6.QtCore import QSize, Qt
-import asyncio
 from asyncua import Client
+import asyncio
+from enum import StrEnum
 from PyQt6.QtWidgets import (
         QApplication, 
         QWidget,
@@ -19,13 +20,22 @@ from PyQt6.QtWidgets import (
 # Only needed for access to command line arguments
 import sys
 
+class State(StrEnum):
+    IDLE = "IDLE"
+    LADLE_ARRIVED = "LADEL_ARRIVED"
+    TILITING = "TILTING"
+    RAKING = "RAKING"
+    COMPLETE = "COMPLETE"
+
 
 class MainWindow(QMainWindow):
-    def __init__(self):
+    def __init__(self, opc_url):
         super().__init__()
         
-        # self.opc_url = opc_url
-        self.node_id = "ns=2;i=2"
+        self.lookup = {i: state.value for i, state in enumerate(State)}
+
+        self.opc_url = opc_url
+        self.node_id = "ns=2;i=10"
 
 
         self.setWindowTitle("Slag Raking State Control")
@@ -43,19 +53,19 @@ class MainWindow(QMainWindow):
         self.state_group.setExclusive(True) # Ensure only one button i s"down"
 
         # Push Buttons for State Control
-        self.button_idle = QPushButton("No Laddle")
-        self.button_laddle = QPushButton("Laddle Arrived")
-        self.button_tilting = QPushButton("Laddle Tilting")
-        self.button_raking = QPushButton("Raking in progress")
-        self.button_finish = QPushButton("Raking finished")
+        self.button_idle = QPushButton("IDLE")
+        self.button_ladle = QPushButton("LADLE_ARRIVED")
+        self.button_tilting = QPushButton("TILTING")
+        self.button_raking = QPushButton("RAKING")
+        self.button_complete = QPushButton("COMPLETE")
         self.button_exit = QPushButton("Exit Simulation") # Button to stop simulation and exit
         
         self.state_buttons = [
                 self.button_idle,
-                self.button_laddle,
+                self.button_ladle,
                 self.button_tilting,
                 self.button_raking,
-                self.button_finish,
+                self.button_complete,
                 ]
 
 
@@ -78,8 +88,6 @@ class MainWindow(QMainWindow):
         self.process_state = QLabel("click here")
         self.process_state.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        # Signal for the Buttons
-        self.button_idle.clicked.connect(lambda: self.update_state(0))
 
         for button in self.state_buttons:
             button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -112,7 +120,7 @@ class MainWindow(QMainWindow):
     def update_state(self, val):
             """Wrapper to run the async write task"""
             print(f"Switching state to: {val}")
-            # asyncio.run(self.write_opc_value(val))
+            asyncio.run(self.write_opc_value(val))
             self.process_state.setText(f"Last Command: {val}")
 
     async def write_opc_value(self, value):
@@ -121,7 +129,7 @@ class MainWindow(QMainWindow):
             async with Client(url=self.opc_url) as client:
                 node = client.get_node(self.node_id)
                 # Setting the value (assumes the node is an Integer type)
-                await node.set_value(value)
+                await node.set_value(self.lookup[value])
         except Exception as e:
             print(f"OPC UA Error: {e}")
 
@@ -131,7 +139,7 @@ app = QApplication(sys.argv)
 url = "opc.tcp://127.0.0.1:4840"
 
 # Create a Qt widget, which will be our window.
-window = MainWindow()
+window = MainWindow(url)
 window.show()  # IMPORTANT!!!!! Windows are hidden by default.
 
 # Start the event loop.
