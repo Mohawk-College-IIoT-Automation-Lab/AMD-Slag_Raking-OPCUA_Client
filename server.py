@@ -28,15 +28,24 @@ async def main():
             bname = "State",
             val = "IDLE",
             )
+
+    steel_precentage = await production_line.add_variable(
+            nodeid="ns=2;i=11",
+            bname = "Steel %",
+            val = 0.0
+            )
     
     # Set state to be writable by clients
     await state.set_writable()
+    await steel_precentage.set_writable()
     _logger.info("Starting server!")
     async with server:
         while True:
             await asyncio.sleep(1)
             value = await state.read_value()
             _logger.info(f"Current State: {value}")
+            steel = await steel_precentage.read_value()
+            _logger.info(f"Steel Percentage after raking: {steel}")
 
 
 if __name__ == "__main__":

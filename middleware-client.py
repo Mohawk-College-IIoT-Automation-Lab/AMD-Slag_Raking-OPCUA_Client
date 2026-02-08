@@ -2,8 +2,10 @@
 import asyncio
 import logging
 import time
+import random
 
 from asyncua import Client, ua
+from asyncua.client.client import Subscription
 from asyncua.server import event_generator
 
 URL = "opc.tcp://127.0.0.1:4840"
@@ -13,67 +15,54 @@ class SubHandler(object):
     """
     The SubscriptionHandler is used to handle the data that is received for the subscription.
     """
-    def __init__(self) -> None:
-        pass
+    def __init__(self, client, idx) -> None:
+        self.client = client
+        self.idx = idx
+        self.last_random_value = 0.0
 
     def datachange_notification(self, node, val, data):
         '''
         The method that is called whenever a data change event occurs in the OPC UA server.
         '''
-        print("Current state:", val)
-        pass
+        asyncio.create_task(self.handle_change(val))
 
+    async def handle_change(self, val):
+        print(f"State changed to: {val}")
 
-class OPCReader(Client):
-    def __init__(self, url, subscription_interval=500):
-        super().__init__(url)
-        self.subscription_interval = subscription_interval
-        self.subscription = None
-        self.handler = SubHandler()
+        if val == "RAKING":
+            self.last_random_value = random.uniform(0.0, 100.0)
+            print(f"Generated new value: {self.last_random_value:.2f}")
 
-    async def __aenter__(self):
-        # Call the parent's aenter to handle the actual connection
-        await super().__aenter__()
-        print(f"Connected to {self.server_url}")
-        
-        # Auto-setup subscription upon entry
-        self.subscription = await self.create_subscription(self.subscription_interval, self.handler)
-        return self
+        elif val == "COMPLETE":
+            try:
+                # Target the steel percentage node
+                steel_node = self.client.get_node(ua.NodeId(ua.Int32(11), ua.Int16(self.idx)))
+                
+                # Write the value
+                dv = ua.DataValue(ua.Variant(self.last_random_value, ua.VariantType.Double))
+                await steel_node.set_value(dv)
+                print(f"Successfully pushed {self.last_random_value:.2f} to server")
+            except Exception as e:
+                print(f"Failed to write: {e}")
 
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-        # Cleanup subscription before closing connection
-        if self.subscription:
-            await self.subscription.delete()
-        
-        # Call parent's aexit to close the session/transport
-        await super().__aexit__(exc_type, exc_val, exc_tb)
-        print("Disconnected and cleaned up.")
-        
 
 async def main():
     print(f"Connecting to {URL} ...")
     async with Client(url=URL) as client:
         idx = await client.get_namespace_index(NAMESPACE)
-        state = client.get_node(ua.NodeId(ua.Int32(10), ua.Int16(idx)))
+        
+        handler = SubHandler(client, idx)
 
-        # Create subscription hander
-        handler = SubHandler()
-
-        # Create subscription
         subscription = await client.create_subscription(500, handler)
 
-        # Subscribe to data changes on the state variable node
-        await subscription.subscribe_data_change(state)
+        state_node = client.get_node(ua.NodeId(ua.Int32(10), ua.Int16(idx)))
+        await subscription.subscribe_data_change(state_node)
 
-        # We let the subscription run for ten seconds
-        await asyncio.sleep(10)
-        # We delete the subscription (this un-subscribes from the data changes of the two variables).
-        # This is optional since closing the connection will also delete all subscriptions.
-        await subscription.delete()
-        # After one second we exit the Client context manager - this will close the connection.
-        await asyncio.sleep(1)
-
-
+        print("Subscription active. Waiting for state changes...")
+        
+        # Keep the connection alive
+        while True:
+            await asyncio.sleep(1)
 
 if __name__ == "__main__":
     asyncio.run(main())
