@@ -6,10 +6,13 @@ import time
 from asyncua import Client, ua
 from asyncua.server import event_generator
 
-URL = "opc.tcp://localhost:4840/freeopcua/server/"
+URL = "opc.tcp://127.0.0.1:4840"
 NAMESPACE = "http://examples.freeopcua.github.io"
 
 class SubHandler(object):
+    """
+    The SubscriptionHandler is used to handle the data that is received for the subscription.
+    """
     def __init__(self) -> None:
         pass
 
@@ -17,6 +20,7 @@ class SubHandler(object):
         '''
         The method that is called whenever a data change event occurs in the OPC UA server.
         '''
+        print("Current state:", val)
         pass
 
 
@@ -46,34 +50,31 @@ class OPCReader(Client):
         print("Disconnected and cleaned up.")
         
 
-# async def main():
-#     print(f"Connecting to {URL} ...")
-#     async with Client(url=URL) as client:
-#
-#         root = client.get_root_node()
-#         print(f"Root node is {root}")
-#         # Find the namespace index
-#         nsidx = await client.get_namespace_index(NAMESPACE)
-#         print(f"Namespace Index for '{NAMESPACE}': {nsidx}")
-#
-#         # Get the stateiable node for read / write
-#         line = await client.nodes.objects.get_child(f"{nsidx}:PLine")
-#         print(f"PLine node: {line}")
-#         state = await client.nodes.root.get_child(f"0:Objects/{nsidx}:PLine/{nsidx}:State")
-#         print(f"Node: {state}")
-#         print(f"Full value of node: {await state.read_data_value()}")
-#         value = await state.read_value()
-#         print(f"Value of Speed ({state}): {value}")
-#
-#         new_value = value - 50
-#         print(f"Setting value of Speed to {new_value} ...")
-#         await state.write_value(new_value)
-#
-#         # Calling a method
-#         res = await client.nodes.objects.call_method(f"{nsidx}:ServerMethod", 5)
-#         print(f"Calling ServerMethod returned {res}")
-#
-#
-# if __name__ == "__main__":
-#     asyncio.run(main())
+async def main():
+    print(f"Connecting to {URL} ...")
+    async with Client(url=URL) as client:
+        idx = await client.get_namespace_index(NAMESPACE)
+        state = client.get_node(ua.NodeId(ua.Int32(10), ua.Int16(idx)))
+
+        # Create subscription hander
+        handler = SubHandler()
+
+        # Create subscription
+        subscription = await client.create_subscription(500, handler)
+
+        # Subscribe to data changes on the state variable node
+        await subscription.subscribe_data_change(state)
+
+        # We let the subscription run for ten seconds
+        await asyncio.sleep(10)
+        # We delete the subscription (this un-subscribes from the data changes of the two variables).
+        # This is optional since closing the connection will also delete all subscriptions.
+        await subscription.delete()
+        # After one second we exit the Client context manager - this will close the connection.
+        await asyncio.sleep(1)
+
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 
