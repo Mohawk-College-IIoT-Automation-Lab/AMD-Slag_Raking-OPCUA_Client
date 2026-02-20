@@ -5,7 +5,7 @@ import logging
 from asyncua import Server, ua
 from asyncua.common.methods import uamethod
 
-
+SERVER_IP = "127.0.0.1"
 
 
 async def main():
@@ -13,7 +13,7 @@ async def main():
     # setup our server
     server = Server()
     await server.init()
-    server.set_endpoint("opc.tcp://127.0.0.1:4840")
+    server.set_endpoint(f"opc.tcp://{SERVER_IP}:49320/FTLinxGateway")
 
     # set up our own namespace, not really necessary but should as spec
     uri = "http://examples.freeopcua.github.io"

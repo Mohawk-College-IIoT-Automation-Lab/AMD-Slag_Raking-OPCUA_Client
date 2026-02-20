@@ -226,7 +226,7 @@ class MainWindow(QMainWindow):
 
 app = QApplication(sys.argv)
 
-url = "opc.tcp://127.0.0.1:4840"
+url = "opc.tcp://127.0.0.1:49320/FTLinxGateway"
 
 # Create a Qt widget, which will be our window.
 window = MainWindow(url)

@@ -3,22 +3,45 @@ import asyncio
 import logging
 import time
 import random
+import paho.mqtt.client as mqtt
+from paho.mqtt.enums import CallbackAPIVersion
 
 from asyncua import Client, ua
 from asyncua.client.client import Subscription
 from asyncua.server import event_generator
 
-URL = "opc.tcp://127.0.0.1:4840"
+SERVER_IP = "127.0.0.1"
+URL = f"opc.tcp://{SERVER_IP}:49320/FTLinxGateway/"
 NAMESPACE = "http://examples.freeopcua.github.io"
+
+BROKER = "localhost"
+PORT = 1883
+EVENT_TOPIC = "test/events"
+DATA_TOPIC = "test/data"
+
+
+def on_connect(client, userdata, flags, reason_code, properties):
+    if reason_code == 0:
+        print("Connection to MQTT Server Successful")
+    else:
+        print(f"Connection failed: {reason_code.getName()}")
+
+def on_message(client, usedata, message, properties=None):
+    # TOOO: unpack json
+    # TODO: write data to opcua
+    decoded_message = message.payload.decode('utf-8')
+    print(f"Simulating writing {decoded_message} to the OPC UA server")
+
 
 class SubHandler(object):
     """
     The SubscriptionHandler is used to handle the data that is received for the subscription.
     """
-    def __init__(self, client, idx) -> None:
+    def __init__(self, client, idx, mqttc: mqtt.Client) -> None:
         self.client = client
         self.idx = idx
         self.last_random_value = 0.0
+        self.mqttc = mqttc
 
     def datachange_notification(self, node, val, data):
         '''
@@ -31,6 +54,10 @@ class SubHandler(object):
 
         if val == "RAKING":
             self.last_random_value = random.uniform(0.0, 100.0)
+
+            # Publish to raking event topic that the raking has started and is in process
+            # TODO: change QoS to an appropriate level
+            self.mqttc.publish(EVENT_TOPIC, 1)
             print(f"Generated new value: {self.last_random_value:.2f}")
 
         elif val == "COMPLETE":
@@ -45,24 +72,46 @@ class SubHandler(object):
             except Exception as e:
                 print(f"Failed to write: {e}")
 
+            # Publish to raking event topic that the raking has completed
+            # TODO: change QoS to an appropriate level
+            self.mqttc.publish(EVENT_TOPIC, 0)
+                                    
+
 
 async def main():
-    print(f"Connecting to {URL} ...")
-    async with Client(url=URL) as client:
-        idx = await client.get_namespace_index(NAMESPACE)
-        
-        handler = SubHandler(client, idx)
+    # Creating mqtt_client instance
+    mqtt_client = mqtt.Client(CallbackAPIVersion.VERSION2)
 
-        subscription = await client.create_subscription(500, handler)
+    mqtt_client.on_connect = on_connect
+    mqtt_client.on_message = on_message
 
-        state_node = client.get_node(ua.NodeId(ua.Int32(10), ua.Int16(idx)))
-        await subscription.subscribe_data_change(state_node)
+    mqtt_client.connect_async(BROKER, PORT)
 
-        print("Subscription active. Waiting for state changes...")
-        
-        # Keep the connection alive
-        while True:
-            await asyncio.sleep(1)
+    try:
+        mqtt_client.loop_start()
+
+        print(f"Connecting to {URL} ...")
+        async with Client(url=URL) as client:
+            idx = await client.get_namespace_index(NAMESPACE)
+
+            # TODO: change QoS to an appropriate level
+            mqtt_client.subscribe(DATA_TOPIC, qos=0)
+
+            handler = SubHandler(client, idx, mqtt_client)
+
+            subscription = await client.create_subscription(500, handler)
+
+            state_node = client.get_node(ua.NodeId(ua.Int32(10), ua.Int16(idx)))
+            await subscription.subscribe_data_change(state_node)
+
+            print("Subscription active. Waiting for state changes...")
+            
+            # Keep the connection alive
+            while True:
+                await asyncio.sleep(1)
+    finally:
+        mqtt_client.loop_stop()
+        mqtt_client.disconnect()
 
 if __name__ == "__main__":
     asyncio.run(main())
