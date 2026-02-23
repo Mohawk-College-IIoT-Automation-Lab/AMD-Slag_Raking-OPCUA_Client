@@ -2,7 +2,9 @@
 import asyncio
 import logging
 import time
+import json
 import random
+import queue
 import paho.mqtt.client as mqtt
 from paho.mqtt.enums import CallbackAPIVersion
 
@@ -18,6 +20,7 @@ BROKER = "localhost"
 PORT = 1883
 EVENT_TOPIC = "test/events"
 DATA_TOPIC = "test/data"
+data_queue = queue.Queue()
 
 
 def on_connect(client, userdata, flags, reason_code, properties):
@@ -30,7 +33,19 @@ def on_message(client, usedata, message, properties=None):
     # TOOO: unpack json
     # TODO: write data to opcua
     decoded_message = message.payload.decode('utf-8')
-    print(f"Simulating writing {decoded_message} to the OPC UA server")
+    data = json.loads(decoded_message)
+    data_queue.put(data)
+    print(f':Simulating writing {data["steel_pct"]} to the OPC UA server')
+        # try:
+        #     # Target the steel percentage node
+        #     steel_node = self.client.get_node(ua.NodeId(ua.Int32(11), ua.Int16(self.idx)))
+        #
+        #     # Write the value
+        #     dv = ua.DataValue(ua.Variant(self.last_random_value, ua.VariantType.Double))
+        #     await steel_node.set_value(dv)
+        #     print(f"Successfully pushed {self.last_random_value:.2f} to server")
+        # except Exception as e:
+        #     print(f"Failed to write: {e}")
 
 
 class SubHandler(object):
@@ -53,25 +68,11 @@ class SubHandler(object):
         print(f"State changed to: {val}")
 
         if val == "RAKING":
-            self.last_random_value = random.uniform(0.0, 100.0)
-
             # Publish to raking event topic that the raking has started and is in process
             # TODO: change QoS to an appropriate level
             self.mqttc.publish(EVENT_TOPIC, 1)
-            print(f"Generated new value: {self.last_random_value:.2f}")
 
         elif val == "COMPLETE":
-            try:
-                # Target the steel percentage node
-                steel_node = self.client.get_node(ua.NodeId(ua.Int32(11), ua.Int16(self.idx)))
-                
-                # Write the value
-                dv = ua.DataValue(ua.Variant(self.last_random_value, ua.VariantType.Double))
-                await steel_node.set_value(dv)
-                print(f"Successfully pushed {self.last_random_value:.2f} to server")
-            except Exception as e:
-                print(f"Failed to write: {e}")
-
             # Publish to raking event topic that the raking has completed
             # TODO: change QoS to an appropriate level
             self.mqttc.publish(EVENT_TOPIC, 0)
@@ -108,6 +109,20 @@ async def main():
             
             # Keep the connection alive
             while True:
+                try:
+                    # Target the steel percentage node
+                    steel_node = client.get_node(ua.NodeId(ua.Int32(11), ua.Int16(idx)))
+                    # Get value from mqtt
+                    try:
+                        steel_pct = data_queue.get(block=False)
+                    except queue.Empty:
+                        continue
+                    # Write the value
+                    dv = ua.DataValue(ua.Variant(steel_pct, ua.VariantType.Double))
+                    await steel_node.set_value(dv)
+                    print(f"Successfully pushed {steel_pct} to server")
+                except Exception as e:
+                    print(f"Failed to write: {e}")
                 await asyncio.sleep(1)
     finally:
         mqtt_client.loop_stop()
