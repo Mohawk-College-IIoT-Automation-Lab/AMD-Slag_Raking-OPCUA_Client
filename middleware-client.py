@@ -26,6 +26,9 @@ data_queue = queue.Queue()
 def on_connect(client, userdata, flags, reason_code, properties):
     if reason_code == 0:
         print("Connection to MQTT Server Successful")
+
+        # TODO: change QoS to an appropriate level
+        client.subscribe(DATA_TOPIC, qos=0)
     else:
         print(f"Connection failed: {reason_code.getName()}")
 
@@ -36,17 +39,6 @@ def on_message(client, usedata, message, properties=None):
     data = json.loads(decoded_message)
     data_queue.put(data)
     print(f':Simulating writing {data["steel_pct"]} to the OPC UA server')
-        # try:
-        #     # Target the steel percentage node
-        #     steel_node = self.client.get_node(ua.NodeId(ua.Int32(11), ua.Int16(self.idx)))
-        #
-        #     # Write the value
-        #     dv = ua.DataValue(ua.Variant(self.last_random_value, ua.VariantType.Double))
-        #     await steel_node.set_value(dv)
-        #     print(f"Successfully pushed {self.last_random_value:.2f} to server")
-        # except Exception as e:
-        #     print(f"Failed to write: {e}")
-
 
 class SubHandler(object):
     """
@@ -86,7 +78,7 @@ async def main():
     mqtt_client.on_connect = on_connect
     mqtt_client.on_message = on_message
 
-    mqtt_client.connect_async(BROKER, PORT)
+    mqtt_client.connect(BROKER, PORT)
 
     try:
         mqtt_client.loop_start()
@@ -94,9 +86,6 @@ async def main():
         print(f"Connecting to {URL} ...")
         async with Client(url=URL) as client:
             idx = await client.get_namespace_index(NAMESPACE)
-
-            # TODO: change QoS to an appropriate level
-            mqtt_client.subscribe(DATA_TOPIC, qos=0)
 
             handler = SubHandler(client, idx, mqtt_client)
 
@@ -106,16 +95,19 @@ async def main():
             await subscription.subscribe_data_change(state_node)
 
             print("Subscription active. Waiting for state changes...")
+
+            # Target the steel percentage node
+            steel_node = client.get_node(ua.NodeId(ua.Int32(11), ua.Int16(idx)))
             
             # Keep the connection alive
             while True:
                 try:
-                    # Target the steel percentage node
-                    steel_node = client.get_node(ua.NodeId(ua.Int32(11), ua.Int16(idx)))
                     # Get value from mqtt
                     try:
-                        steel_pct = data_queue.get(block=False)
+                        raking_data = data_queue.get(block=False)
+                        steel_pct = raking_data["steel_pct"]
                     except queue.Empty:
+                        await asyncio.sleep(1)
                         continue
                     # Write the value
                     dv = ua.DataValue(ua.Variant(steel_pct, ua.VariantType.Double))
