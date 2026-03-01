@@ -88,12 +88,13 @@ it is not implied that work is started right at that moment, when the interprete
 In a complex program we don't know what jobs are finished, what are ready to be run, 
 and what is the order of the event-loop's to-do list.
 What we know and have control over is not moving forward until something is done. 
-Event-loop will give control to a program that is ready to run.
-If there are multiple jobs ready, the loop will select whatever task was created first
+Event-loop will give control to a job that is ready to run.
+If there are multiple jobs ready, the loop will select whatever task became ready first
 because it uses a FIFO queue under the hood. 
 So, the top job of the to-do list that is ready to run will become in control.
-We won't know how long it will take and what will happend in the meantime, 
-the only thing we know is that the work is complete by the next time the coroutine gets the control.
+Thus, we don't know how long it will take and what will happend between the time the
+coroutine cedes the control at `await work` and gets back the control, 
+the only thing we know is that the *work* is complete by the next time the coroutine gets the control.
 
 For example, `await asyncio.sleep(1)` doesn't means that the coroutine will be paused for 1 second exactly.
 We don't know how much time will pass until the coroutine get back the control.
@@ -101,7 +102,7 @@ We know that *at least* 1 second will elapse, but the time can be longer if even
 cumulatively take longer than 1 second to run.
 
 To conclude, when you write `await work` you essentially say: 
-"I cannot continue this routine without the result of *work*"
+"I cannot continue this coroutine without the result of *work*"
 
 #### The difference between awaiting tasks and awaiting coroutines
 
