@@ -46,23 +46,21 @@ A **Coroutine Object** represents the function’s body or logic.
 import asyncio
 from typing import Coroutine
 
-async def func(param) -> str:
-    print(f"Do something with {param}")
-    await asyncio.sleep(param)
-    return f"Result of processing {param}"
+async def work(param) -> None:
+    print(f"Do {param}")
 
 async def main():
-    coroutine: Coroutine = func(1)
+    coroutine: Coroutine = work(1)
     task: asyncio.Task = asyncio.create_task(coroutine)
-    result: str = await task
 ```
-Logic inside `func(param)` will not be executed on line `coroutine: Coroutine = func(1)`, neither will `func(1)` be added to the event-loop's collection of jobs to be run. Merely a **Coroutine Object** will be created on this line.
+
+Logic inside `work(param)` will not be executed on line `coroutine: Coroutine = work(1)`, neither will `work(1)` be added to the event-loop's collection of jobs to be run. Merely a **Coroutine Object** will be created on this line.
 
 ### Task
 
 Task is an entry on the event-loop's to-do list.
 
-`func(1)` is added to the event-loop's collection of jobs to be run or is *scheduled* on this line:
+`work(1)` is added to the event-loop's collection of jobs to be run or is *scheduled* on this line:
     `task: asyncio.Task = asyncio.create_task(coroutine)`
 
 ### await
@@ -96,7 +94,7 @@ Thus, we don't know how long it will take and what will happend between the time
 coroutine cedes the control at `await work` and gets back the control, 
 the only thing we know is that the *work* is complete by the next time the coroutine gets the control.
 
-For example, `await asyncio.sleep(1)` doesn't means that the coroutine will be paused for 1 second exactly.
+For example, `await asyncio.sleep(1)` doesn't mean that the coroutine will be paused for 1 second exactly.
 We don't know how much time will pass until the coroutine get back the control.
 We know that *at least* 1 second will elapse, but the time can be longer if event-loop's list of scheduled tasks 
 cumulatively take longer than 1 second to run.
@@ -106,7 +104,62 @@ To conclude, when you write `await work` you essentially say:
 
 #### The difference between awaiting tasks and awaiting coroutines
 
-<Placeholder>
+Consider the following two examples:
+
+**Example 1. Awaiting a *coroutine***:
+
+```python
+import asyncio
+from typing import Coroutine
+
+async def work(param) -> None:
+    print(f"Do {param}")
+
+async def main():
+    coroutine1: Coroutine = work(1)
+    coroutine2: Coroutine = work(2)
+    task1: asyncio.Task = asyncio.create_task(coroutine1)
+    await coroutine2
+    await task1
+```
+
+**Output of Example 1**:
+
+```
+Do 2
+Do 1
+```
+
+**Example 2. Awaiting a *task***:
+
+```python
+import asyncio
+from typing import Coroutine
+
+async def work(param) -> None:
+    print(f"Do {param}")
+
+async def main():
+    coroutine1: Coroutine = work(1)
+    coroutine2: Coroutine = work(2)
+    task1: asyncio.Task = asyncio.create_task(coroutine1)
+    await asyncio.create_task(coroutine2)
+    await task1
+```
+
+**Output of Example 2**:
+
+```
+Do 1
+Do 2
+```
+
+When a coroutine awaits a task it cedes the control to the event-loop. The event-loop does jobs in it's own order, in this case it is `task1` then `asyncio.create_task(corotine2)` because `task1` is ready and was scheduled first.
+
+When a coroutine awaits another coroutine it runs the inner coroutine as part of the current task
+(it’s like a nested call). So, unlike tasks, *awaiting a coroutine does not hand control back to the event loop*! 
+
+The behavior of `await coroutine` is effectively the same as invoking a regular, synchronous Python function.
 
 ## Sources
 
