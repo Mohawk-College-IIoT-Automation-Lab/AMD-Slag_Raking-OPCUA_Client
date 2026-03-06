@@ -30,12 +30,26 @@ print(f"Files will be saved to: {SAVE_DIR}")
 
 def generate_random_data():
     """Generates data based on user-specified ranges."""
-    steel = round(random.uniform(5.0, 15.0), 2)
+    steel_start = round(random.random(), 2)
+    steel_end = round(random.uniform(3.0, 10.0), 2)
+    total_slag_start = round(100.0 - steel_start, 2)
+    total_slag_end = round(100.0 - steel_end, 2)
+    liquid_slag_start = round(random.uniform(total_slag_start*0.2, total_slag_start*0.4), 2)
+    liquid_slag_end = round(random.uniform(total_slag_end*0.2, total_slag_end*0.4), 2)
     data = {
         "total_time_seconds": random.randint(50, 200),
         "num_pulls": random.randint(5, 15),
-        "steel_pct": steel,
-        "slag_pct": round(100.0 - steel, 2)
+        "slag_index": round(random.random(), 2),
+        "overall": {
+            "steel_pct_start": steel_start,
+            "steel_pct_end": steel_end,
+            "total_slag_pct_start": total_slag_start,
+            "total_slag_pct_end": total_slag_end,
+            "solid_slag_pct_start": total_slag_start - liquid_slag_start,
+            "solid_slag_pct_end": total_slag_end - liquid_slag_end,
+            "liquid_slag_pct_start": liquid_slag_start,
+            "liquid_slag_pct_end": liquid_slag_end
+            }
     }
     return data
 
@@ -48,9 +62,10 @@ def on_connect(client, userdata, flags, rc, properties):
 
 def on_message(client, userdata, msg):
     global current_data, file_counter
-    payload = msg.payload.decode().strip()
+    data = msg.payload.decode("utf-8")
+    event = json.loads(data)
     
-    if payload == "1":
+    if event["state"] == "1":
         # Generate and Save
         current_data = generate_random_data()
         file_path = os.path.join(SAVE_DIR, f"ladle_{file_counter:02d}.json")
@@ -61,9 +76,10 @@ def on_message(client, userdata, msg):
         print(f"Generated & Saved: {file_path}")
         file_counter += 1
         
-    elif payload == "0":
+    elif event["state"] == "0":
         # Publish
         if current_data:
+            current_data["heat_id"] =  event["heat_id"]
             client.publish(TOPIC_PUB, json.dumps(current_data), qos=2)
             print(f"Published latest data to {TOPIC_PUB}")
             current_data = None 

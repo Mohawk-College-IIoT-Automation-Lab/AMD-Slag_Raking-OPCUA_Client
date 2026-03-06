@@ -48,6 +48,7 @@ class SubHandler(object):
         self.client = client
         self.idx = idx
         self.last_random_value = 0.0
+        self.heat_id = 0
         self.mqttc = mqttc
 
     def datachange_notification(self, node, val, data):
@@ -58,16 +59,16 @@ class SubHandler(object):
 
     async def handle_change(self, val):
         print(f"State changed to: {val}")
-
+        self.heat_id += 1
         if val == "RAKING":
             # Publish to raking event topic that the raking has started and is in process
-            # TODO: change QoS to an appropriate level
-            self.mqttc.publish(EVENT_TOPIC, 1)
+            event: dict = {"heat_id": self.heat_id, "state": val}
+            self.mqttc.publish(EVENT_TOPIC, json.dumps(event), qos=2)
 
         elif val == "COMPLETE":
             # Publish to raking event topic that the raking has completed
-            # TODO: change QoS to an appropriate level
-            self.mqttc.publish(EVENT_TOPIC, 0)
+            event: dict = {"heat_id": self.heat_id, "state": val}
+            self.mqttc.publish(EVENT_TOPIC, json.dumps(event), qos=2)
                                     
 
 
