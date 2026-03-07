@@ -65,7 +65,7 @@ def on_message(client, userdata, msg):
     data = msg.payload.decode("utf-8")
     event = json.loads(data)
     
-    if event["state"] == "1":
+    if event["state"]:
         # Generate and Save
         current_data = generate_random_data()
         file_path = os.path.join(SAVE_DIR, f"ladle_{file_counter:02d}.json")
@@ -76,15 +76,15 @@ def on_message(client, userdata, msg):
         print(f"Generated & Saved: {file_path}")
         file_counter += 1
         
-    elif event["state"] == "0":
+    elif not event["state"]:
         # Publish
         if current_data:
-            current_data["heat_id"] =  event["heat_id"]
+            current_data["heat_id"] = event["heat_id"]
             client.publish(TOPIC_PUB, json.dumps(current_data), qos=2)
             print(f"Published latest data to {TOPIC_PUB}")
             current_data = None 
         else:
-            print("No data staged. Send '1' first.")
+            print("No data staged. Send 'true' first.")
 
 
 # Graceful shutdown handler

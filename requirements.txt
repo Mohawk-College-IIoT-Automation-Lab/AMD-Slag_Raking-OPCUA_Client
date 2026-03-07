@@ -1,3 +1,4 @@
 paho-mqtt
 asyncua
+qasync
 PyQt6

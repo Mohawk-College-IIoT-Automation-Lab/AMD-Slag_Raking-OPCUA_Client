@@ -1,240 +1,120 @@
 #!/home/daniil/miniconda3/envs/opcua/bin/python
-from asyncua import Client
-import asyncio
-from enum import StrEnum
-
-# Only needed for access to command line arguments
 import sys
+import asyncio
+from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout, 
+                             QPushButton, QLineEdit, QLabel, QTextEdit)
+from PyQt6.QtCore import Qt
+from qasync import QEventLoop, asyncSlot
+from asyncua import Client, ua
 
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtWidgets import (
-        QApplication, 
-        QWidget,
-        QPushButton,
-        QPushButton,
-        QMainWindow,
-        QLabel,
-        QVBoxLayout,
-        QHBoxLayout,
-        QButtonGroup,
-        QSizePolicy,
-        )
+# Matches your server constants
+LADLE_TILT_STATE_INDEX = 0 
+HEAT_ID_INDEX = 0
+HOSTNAME = "iiot-daniil"
 
-# 1. The Callback Class
-class SubscriptionHandler:
-    """This class is called by the OPC UA client when data changes."""
-    def __init__(self, signal):
-        self.signal = signal
-
-    def datachange_notification(self, node, val, data):
-        # We emit the Qt Signal to update the UI safely from the background
-        self.signal.emit(str(val))
-
-# 2. The Worker Thread
-class OPCWorker(QThread):
-    value_changed = pyqtSignal(str)
-    error_occurred = pyqtSignal(str)
-
-    def __init__(self, url, node_id, lookup):
+class SimulationGUI(QWidget):
+    def __init__(self, endpoint):
         super().__init__()
-        self.url = url
-        self.node_id = node_id
-        self.lookup = lookup
-        self.loop = None
-        self._client = None
+        self.endpoint = endpoint
+        self.client = Client(self.endpoint)
+        self.init_ui()
+        
+    def init_ui(self):
+        self.setWindowTitle("Ladle Simulation Control")
+        self.setMinimumSize(400, 300)
+        layout = QVBoxLayout()
 
-    def run(self):
-        """Main entry point for the thread"""
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
-        self.loop.run_until_complete(self.monitor_opc())
+        # Heat ID Input
+        self.id_label = QLabel("Heat ID (Positive Integer):")
+        self.heat_id_input = QLineEdit()
+        self.heat_id_input.setPlaceholderText("Enter Heat ID...")
+        layout.addWidget(self.id_label)
+        layout.addWidget(self.heat_id_input)
 
-    async def monitor_opc(self):
-        try:
-            async with Client(url=self.url) as client:
-                self._client = client
-                node =  client.get_node(self.node_id)
-                
-                # Setup Subscription
-                handler = SubscriptionHandler(self.value_changed)
-                subscription = await client.create_subscription(500, handler)
-                await subscription.subscribe_data_change(node)
+        # Toggle Button
+        self.tilt_btn = QPushButton("Ladle Idle")
+        self.tilt_btn.setCheckable(True)
+        self.tilt_btn.setFixedHeight(60)
+        self.tilt_btn.setStyleSheet("background-color: #f0f0f0;")
+        self.tilt_btn.clicked.connect(self.handle_toggle)
+        layout.addWidget(self.tilt_btn)
 
-                # Keep the thread alive while the connection is open
-                while True:
-                    await asyncio.sleep(1)
-        except Exception as e:
-            self.error_occurred.emit(str(e))
+        # Logger/Status Box
+        self.log_box = QTextEdit()
+        self.log_box.setReadOnly(True)
+        layout.addWidget(QLabel("System Logs:"))
+        layout.addWidget(self.log_box)
 
-    def write_value(self, index):
-        """Thread-safe way to write from the UI"""
-        if self._client and self.loop:
-            value_to_write = self.lookup[index]
-            # Schedules the coroutine to run on the worker's event loop
-            asyncio.run_coroutine_threadsafe(
-                self._set_node_value(value_to_write), 
-                self.loop
-            )
+        self.setLayout(layout)
 
-    async def _set_node_value(self, val):
-        # 1. Guard against 'None' if connection isn't ready yet
-        if self._client is None:
-            print("Error: Client not connected yet.")
-            return
+    def log(self, message):
+        self.log_box.append(f">> {message}")
 
-        try:
-            # 2. Get the node object (synchronous in asyncua)
-            node = self._client.get_node(self.node_id)
+    def validate_input(self):
+        val = self.heat_id_input.text()
+        if val.isdigit() and int(val) > 0:
+            return int(val)
+        return None
+
+    @asyncSlot()
+    async def handle_toggle(self):
+        heat_id = self.validate_input()
+        
+        # If trying to start (press button)
+        if self.tilt_btn.isChecked():
+            if heat_id is None:
+                self.log("Error: Please enter a valid Heat ID (>0) before starting.")
+                self.tilt_btn.setChecked(False) # Reset button
+                return
             
-            # 3. Write the value (asynchronous)
-            await node.set_value(val)
-            print(f"Successfully wrote {val} to server.")
-        except Exception as e:
-            self.error_occurred.emit(f"Write failed: {e}")
-
-
-
-class State(StrEnum):
-    IDLE = "IDLE"
-    LADLE_ARRIVED = "LADEL_ARRIVED"
-    TILITING = "TILTING"
-    RAKING = "RAKING"
-    COMPLETE = "COMPLETE"
-
-
-class MainWindow(QMainWindow):
-    def __init__(self, opc_url):
-        super().__init__()
+            # Lock input and change UI
+            self.heat_id_input.setEnabled(False)
+            self.tilt_btn.setText("Raking in progress")
+            self.tilt_btn.setStyleSheet("background-color: green; color: white;")
+            await self.write_to_opc(True, heat_id)
         
-        self.lookup = {i: state.value for i, state in enumerate(State)}
+        # If trying to stop (release button)
+        else:
+            self.heat_id_input.setEnabled(True)
+            self.tilt_btn.setText("Ladle Idle")
+            self.tilt_btn.setStyleSheet("background-color: #f0f0f0; color: black;")
+            await self.write_to_opc(False, heat_id)
 
-        self.opc_url = opc_url
-        self.node_id = "ns=2;i=10"
-
-
-        self.setWindowTitle("Slag Raking State Control")
-        
-        # Layouts
-        main_layout = QHBoxLayout()
-        left_layout = QVBoxLayout()
-        right_layout = QVBoxLayout()
-
-        main_layout.addLayout(left_layout, 1)
-        main_layout.addLayout(right_layout, 1)
-
-        # Create a Button Group
-        self.state_group = QButtonGroup(self)
-        self.state_group.setExclusive(True) # Ensure only one button i s"down"
-
-        # Push Buttons for State Control
-        self.button_idle = QPushButton("IDLE")
-        self.button_ladle = QPushButton("LADLE_ARRIVED")
-        self.button_tilting = QPushButton("TILTING")
-        self.button_raking = QPushButton("RAKING")
-        self.button_complete = QPushButton("COMPLETE")
-        self.button_exit = QPushButton("Exit Simulation") # Button to stop simulation and exit
-        
-        self.state_buttons = [
-                self.button_idle,
-                self.button_ladle,
-                self.button_tilting,
-                self.button_raking,
-                self.button_complete,
-                ]
-
-
-        # Make latching
-        for button in self.state_buttons:
-            button.setCheckable(True)
-
-
-        # Add buttons to the Group
-        for i, button in enumerate(self.state_buttons):
-            self.state_group.addButton(button, i)
-
-
-        # Set Initial State for the system
-        self.button_idle.setChecked(True)
-        
-        # Connect id Click signal of the button group to the self.update_state setLayout
-        self.state_group.idClicked.connect(self.update_state)
-        # Label to display current state as read from the OPC UA server
-        self.process_state = QLabel("click here")
-        self.process_state.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-
-        for button in self.state_buttons:
-            button.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-            
-            font = button.font()
-            font.setPointSize(12)
-            font.setBold(True)
-            button.setFont(font)
-
-
-            left_layout.addWidget(button)
-
-        right_layout.addWidget(self.process_state)
-        right_layout.addWidget(self.button_exit)
-
-
-        widget = QWidget()
-        widget.setLayout(main_layout)
-        self.setCentralWidget(widget)
-
-        # 5. Visual Styling (Optional but helpful)
-        self.setStyleSheet("""
-            QPushButton:checked {
-                background-color: #4CAF50;
-                color: white;
-                font-weight: bold;
-            }
-        """)
-
-        self.worker = OPCWorker(self.opc_url, self.node_id, self.lookup)
-        # Connect the subscription signal directly to your label
-        self.worker.value_changed.connect(self.process_state.setText)
-        self.worker.start()
-        
-    # Updated update_state
-    def update_state(self, val_id):
-        """Clean and fast: just sends the command to the background"""
-        print(f"UI requesting change to: {val_id}")
-        self.worker.write_value(val_id)
-
-
-    async def write_opc_value(self, value):
-        """The actual OPC UA async communication"""
+    async def write_to_opc(self, state, heat_id):
         try:
-            async with Client(url=self.opc_url) as client:
-                node = client.get_node(self.node_id)
-                # Setting the value (assumes the node is an Integer type)
-                await node.set_value(self.lookup[value])
-        except Exception as e:
-            print(f"OPC UA Error: {e}")
+            async with Client(self.endpoint) as client:
+                # Get Node References
+                bool_node = client.get_node("ns=2;s=[UA_server]OU_Server_IO.BOOL_Write")
+                real_node = client.get_node("ns=2;s=[UA_server]OU_Server_IO.REAL_Write")
 
-    async def read_opc_value(self):
-        try:
-            async with Client(url=self.opc_url) as client:
-                node = client.get_node(self.node_id)
-                return await node.read_value()
-        except Exception as e:
-            print(f"OPC UA Error: {e}")
-            return None
+                # Read current arrays
+                bool_values = await bool_node.get_value()
+                real_values = await real_node.get_value()
+
+                # Update specific indices
+                bool_values[LADLE_TILT_STATE_INDEX] = state
+                real_values[HEAT_ID_INDEX] = float(heat_id)
+
+                # Write back
+                await bool_node.set_value(bool_values, ua.VariantType.Boolean)
+                await real_node.set_value(real_values, ua.VariantType.Double)
                 
+                self.log(f"Success: State={state}, HeatID={heat_id} written to server.")
+        
+        except Exception as e:
+            self.log(f"OPC UA Error: {str(e)}")
 
+async def main():
+    app = QApplication(sys.argv)
+    loop = QEventLoop(app)
+    asyncio.set_event_loop(loop)
 
-app = QApplication(sys.argv)
+    endpoint = f"opc.tcp://{HOSTNAME}:4990/FactoryTalkLinxGateway/"
+    gui = SimulationGUI(endpoint)
+    gui.show()
 
-url = "opc.tcp://127.0.0.1:49320/FTLinxGateway"
+    with loop:
+        loop.run_forever()
 
-# Create a Qt widget, which will be our window.
-window = MainWindow(url)
-window.show()  # IMPORTANT!!!!! Windows are hidden by default.
-
-# Start the event loop.
-app.exec()
-
-
-# Your application won't reach here until you exit and the event
-# loop has stopped.
+if __name__ == "__main__":
+    asyncio.run(main())
