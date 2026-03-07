@@ -23,8 +23,9 @@ PULLS_INDEX = 2
 
 BROKER = "localhost"
 PORT = 1883
-EVENT_TOPIC = "test/events"
-DATA_TOPIC = "test/data"
+EVENT_TOPIC = "raking/events"
+DATA_TOPIC = "raking/data"
+TEMPERATURE_TOPIC = "raking/camera_temperature"
 data_queue = queue.Queue()
 
 
@@ -33,7 +34,7 @@ def on_connect(client, userdata, flags, reason_code, properties):
         print("Connection to MQTT Server Successful")
 
         # TODO: change QoS to an appropriate level
-        client.subscribe(DATA_TOPIC, qos=0)
+        client.subscribe(DATA_TOPIC, qos=2)
     else:
         print(f"Connection failed: {reason_code.getName()}")
 

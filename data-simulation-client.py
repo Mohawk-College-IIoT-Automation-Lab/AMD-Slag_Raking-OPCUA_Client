@@ -1,5 +1,6 @@
 #!/home/daniil/miniconda3/envs/opcua/bin/python
 import paho.mqtt.client as mqtt
+import time
 import json
 import random
 import signal
@@ -12,8 +13,9 @@ from paho.mqtt.enums import CallbackAPIVersion
 # Configuration
 BROKER = "localhost"
 PORT = 1883
-TOPIC_SUB = "test/events"
-TOPIC_PUB = "test/data"
+EVENT_TOPIC = "raking/events"
+DATA_TOPIC = "raking/data"
+TEMPERATURE_TOPIC = "raking/camera_temperature"
 SAVE_DIR = os.path.join(os.path.expanduser("~"), "Documents", "test_jsons")
 
 # Initialize state
@@ -45,8 +47,8 @@ def generate_random_data():
             "steel_pct_end": steel_end,
             "total_slag_pct_start": total_slag_start,
             "total_slag_pct_end": total_slag_end,
-            "solid_slag_pct_start": total_slag_start - liquid_slag_start,
-            "solid_slag_pct_end": total_slag_end - liquid_slag_end,
+            "solid_slag_pct_start": round(total_slag_start - liquid_slag_start, 2),
+            "solid_slag_pct_end": round(total_slag_end - liquid_slag_end, 2),
             "liquid_slag_pct_start": liquid_slag_start,
             "liquid_slag_pct_end": liquid_slag_end
             }
@@ -56,7 +58,7 @@ def generate_random_data():
 def on_connect(client, userdata, flags, rc, properties):
     if rc == 0:
         print(f"Connected to {BROKER} successfully.")
-        client.subscribe(TOPIC_SUB, qos=2)
+        client.subscribe(EVENT_TOPIC, qos=2)
     else:
         print(f"Connection failed with code {rc}")
 
@@ -64,8 +66,11 @@ def on_message(client, userdata, msg):
     global current_data, file_counter
     data = msg.payload.decode("utf-8")
     event = json.loads(data)
+
+    # event["state"] is expected to be boolean true/false
+    state = event.get("state", None)
     
-    if event["state"]:
+    if state:
         # Generate and Save
         current_data = generate_random_data()
         file_path = os.path.join(SAVE_DIR, f"ladle_{file_counter:02d}.json")
@@ -76,15 +81,18 @@ def on_message(client, userdata, msg):
         print(f"Generated & Saved: {file_path}")
         file_counter += 1
         
-    elif not event["state"]:
+    elif not state:
         # Publish
         if current_data:
             current_data["heat_id"] = event["heat_id"]
-            client.publish(TOPIC_PUB, json.dumps(current_data), qos=2)
-            print(f"Published latest data to {TOPIC_PUB}")
+            client.publish(DATA_TOPIC, json.dumps(current_data), qos=2)
+            print(f"Published latest data to {DATA_TOPIC}")
             current_data = None 
         else:
             print("No data staged. Send 'true' first.")
+
+    else:
+        print("State key not present in message json")
 
 
 # Graceful shutdown handler
@@ -102,10 +110,20 @@ client.on_message = on_message
 
 try:
     client.connect(BROKER, PORT, 60)
+    
+    # Start the background networking thread
+    client.loop_start()
     print("Application running. Press Ctrl+C to exit.")
-    client.loop_forever()
+
+    while True:
+        # Generate and publish temperature every 5 seconds
+        temp_val = round(random.uniform(50.0, 100.0), 2)
+        client.publish(TEMPERATURE_TOPIC, temp_val, qos=0)
+        # print(f"Sensor Update: {temp_val}°C") # Optional log
+        
+        time.sleep(5)
+
 except KeyboardInterrupt:
-    print("\nUser interrupted. Disconnecting...")
-    client.disconnect()
+    signal_handler(None, None)
 except Exception as e:
     print(f"Fatal error: {e}")
