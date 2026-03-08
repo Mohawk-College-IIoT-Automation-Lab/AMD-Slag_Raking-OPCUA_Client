@@ -1,7 +1,6 @@
 #!/home/daniil/miniconda3/envs/opcua/bin/python
 import asyncio
 import logging
-import time
 import json
 import queue
 import paho.mqtt.client as mqtt
@@ -20,31 +19,40 @@ RAKE_HOME_STATE_INDEX = 1
 HEAT_ID_INDEX = 0
 TIME_INDEX = 1
 PULLS_INDEX = 2
+SLAG_THRESHOLD_INDEX = 3 
+STEEL_START_INDEX = 4 
+STEEL_END_INDEX = 5 
+TOTAL_SLAG_START_INDEX = 6
+TOTAL_SLAG_END_INDEX = 7
+SOLID_SLAG_START_INDEX = 8
+SOLID_SLAG_END_INDEX = 9
+LIQUID_SLAG_START_INDEX = 10
+LIQUID_SLAG_END_INDEX = 11
+CAMERA_TEMPERATURE_INDEX = 12
+RECIPE_ID_INDEX = 13
+CAMERA_STATUS_INDEX = 0
 
 BROKER = "localhost"
 PORT = 1883
 EVENT_TOPIC = "raking/events"
 DATA_TOPIC = "raking/data"
-TEMPERATURE_TOPIC = "raking/camera_temperature"
-data_queue = queue.Queue()
+CAMERA_TOPIC = "raking/camera"
+data_queue = queue.Queue(maxsize=5)
 
 
 def on_connect(client, userdata, flags, reason_code, properties):
     if reason_code == 0:
         print("Connection to MQTT Server Successful")
 
-        # TODO: change QoS to an appropriate level
         client.subscribe(DATA_TOPIC, qos=2)
+        client.subscribe(CAMERA_TOPIC, qos=2)
     else:
         print(f"Connection failed: {reason_code.getName()}")
 
 def on_message(client, usedata, message, properties=None):
-    # TOOO: unpack json
-    # TODO: write data to opcua
     decoded_message = message.payload.decode('utf-8')
     data = json.loads(decoded_message)
-    data_queue.put(data)
-    print(f':Simulating writing {data} to the OPC UA server')
+    data_queue.put((message.topic, data))
 
 class SubHandler(object):
     """
@@ -65,7 +73,7 @@ class SubHandler(object):
     async def handle_change(self, val):
         print(f"Raking in progress: {val[LADLE_TILT_STATE_INDEX]}")
         process_ids = await self.ids_node.get_value()
-        heat_id = process_ids[HEAT_ID_INDEX]
+        heat_id = int(process_ids[HEAT_ID_INDEX])
         if val[LADLE_TILT_STATE_INDEX]: # raking has stated
             # Publish to raking event topic that the raking has started and is in process
             event: dict = {"heat_id": heat_id, "state": val[LADLE_TILT_STATE_INDEX]}
@@ -95,6 +103,7 @@ async def main():
             states = client.get_node("ns=2;s=[UA_server]OU_Server_IO.BOOL_Write")
             ids = client.get_node("ns=2;s=[UA_server]OU_Server_IO.REAL_Write")
             data = client.get_node("ns=2;s=[UA_server]OU_Server_IO.REAL_Read")
+            flags = client.get_node("ns=2;s=[UA_server]OU_Server_IO.BOOL_Read") 
 
             handler = SubHandler(client, idx, mqtt_client, ids)
 
@@ -110,27 +119,47 @@ async def main():
                     # Get value from mqtt
                     try:
                         raking_data = data_queue.get(block=False)
-                        heat_id = raking_data["heat_id"]
-                        time = raking_data["total_time_seconds"]
-                        pulls = raking_data["num_pulls"]
+                        cv_data: dict = {}
+                        camera_data: dict = {}
+                        if raking_data[0] == DATA_TOPIC:
+                            cv_data = raking_data[1]
+                        elif raking_data[0] == CAMERA_TOPIC:
+                            camera_data = raking_data[1]
                     except queue.Empty:
                         await asyncio.sleep(1)
                         continue
 
                     # Read current array
                     real_values = await data.get_value()
+                    bool_values = await flags.get_value()
 
                     # Update specific indices
+                    if cv_data:
+                        # TODO: check that the heat id is the same as the one read and passed
+                        real_values[HEAT_ID_INDEX] = float(cv_data["heat_id"])
 
-                    # TODO: check that the heat id is the same as the one read and passed
-                    real_values[HEAT_ID_INDEX] = float(heat_id)
+                        real_values[TIME_INDEX] = float(cv_data["total_time_seconds"])
+                        real_values[PULLS_INDEX] = float(cv_data["num_pulls"])
+                        real_values[SLAG_THRESHOLD_INDEX] = cv_data["slag_index"]
+                        real_values[STEEL_START_INDEX] = cv_data["overall"]["steel_pct_start"]
+                        real_values[STEEL_END_INDEX] = cv_data["overall"]["steel_pct_end"]
+                        real_values[TOTAL_SLAG_START_INDEX] = cv_data["overall"]["total_slag_pct_start"]
+                        real_values[TOTAL_SLAG_END_INDEX] = cv_data["overall"]["total_slag_pct_end"]
+                        real_values[SOLID_SLAG_START_INDEX] = cv_data["overall"]["solid_slag_pct_start"]
+                        real_values[SOLID_SLAG_END_INDEX] = cv_data["overall"]["solid_slag_pct_end"]
+                        real_values[LIQUID_SLAG_START_INDEX] = cv_data["overall"]["liquid_slag_pct_start"]
+                        real_values[LIQUID_SLAG_END_INDEX] = cv_data["overall"]["liquid_slag_pct_end"]
+                        print(f"Raking for heat id {cv_data["heat_id"]} took {cv_data["total_time_seconds"]}s and required {cv_data["num_pulls"]} pulls")
+                        cv_data = {}
 
-                    real_values[TIME_INDEX] = float(time)
-                    real_values[PULLS_INDEX] = float(pulls)
+                    elif camera_data:
+                        real_values[CAMERA_TEMPERATURE_INDEX] = camera_data["temperature"]
+                        bool_values[CAMERA_STATUS_INDEX] = camera_data["connected"]
+                        camera_data = {}
 
                     # Write back
                     await data.set_value(real_values, ua.VariantType.Double)
-                    print(f"Raking for heat id {heat_id} took {time}s and required {pulls} pulls")
+                    await flags.set_value(bool_values, ua.VariantType.Boolean)
                 except Exception as e:
                     print(f"Failed to write: {e}")
                 await asyncio.sleep(1)

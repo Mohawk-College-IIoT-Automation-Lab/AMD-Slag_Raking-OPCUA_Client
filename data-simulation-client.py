@@ -15,7 +15,7 @@ BROKER = "localhost"
 PORT = 1883
 EVENT_TOPIC = "raking/events"
 DATA_TOPIC = "raking/data"
-TEMPERATURE_TOPIC = "raking/camera_temperature"
+CAMERA_TOPIC = "raking/camera"
 SAVE_DIR = os.path.join(os.path.expanduser("~"), "Documents", "test_jsons")
 
 # Initialize state
@@ -118,7 +118,7 @@ try:
     while True:
         # Generate and publish temperature every 5 seconds
         temp_val = round(random.uniform(50.0, 100.0), 2)
-        client.publish(TEMPERATURE_TOPIC, temp_val, qos=0)
+        client.publish(CAMERA_TOPIC, json.dumps({"connected": True, "temperature": temp_val}), qos=0)
         # print(f"Sensor Update: {temp_val}°C") # Optional log
         
         time.sleep(5)
