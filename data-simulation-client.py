@@ -7,15 +7,11 @@ import signal
 import sys
 import os
 import shutil
+import consts
 
 from paho.mqtt.enums import CallbackAPIVersion
 
 # Configuration
-BROKER = "localhost"
-PORT = 1883
-EVENT_TOPIC = "raking/events"
-DATA_TOPIC = "raking/data"
-CAMERA_TOPIC = "raking/camera"
 SAVE_DIR = os.path.join(os.path.expanduser("~"), "Documents", "test_jsons")
 
 # Initialize state
@@ -41,7 +37,6 @@ def generate_random_data():
     data = {
         "total_time_seconds": random.randint(50, 200),
         "num_pulls": random.randint(5, 15),
-        "slag_index": round(random.random(), 2),
         "overall": {
             "steel_pct_start": steel_start,
             "steel_pct_end": steel_end,
@@ -50,15 +45,17 @@ def generate_random_data():
             "solid_slag_pct_start": round(total_slag_start - liquid_slag_start, 2),
             "solid_slag_pct_end": round(total_slag_end - liquid_slag_end, 2),
             "liquid_slag_pct_start": liquid_slag_start,
-            "liquid_slag_pct_end": liquid_slag_end
+            "liquid_slag_pct_end": liquid_slag_end,
+            "slag_index_start": round(random.random(), 4),
+            "slag_index_end": round(random.random(), 4),
             }
     }
     return data
 
 def on_connect(client, userdata, flags, rc, properties):
     if rc == 0:
-        print(f"Connected to {BROKER} successfully.")
-        client.subscribe(EVENT_TOPIC, qos=2)
+        print(f"Connected to {consts.BROKER} successfully.")
+        client.subscribe(consts.EVENT_TOPIC, qos=2)
     else:
         print(f"Connection failed with code {rc}")
 
@@ -85,8 +82,8 @@ def on_message(client, userdata, msg):
         # Publish
         if current_data:
             current_data["heat_id"] = event["heat_id"]
-            client.publish(DATA_TOPIC, json.dumps(current_data), qos=2)
-            print(f"Published latest data to {DATA_TOPIC}")
+            client.publish(consts.DATA_TOPIC, json.dumps(current_data), qos=2)
+            print(f"Published latest data to {consts.DATA_TOPIC}")
             current_data = None 
         else:
             print("No data staged. Send 'true' first.")
@@ -109,7 +106,7 @@ client.on_connect = on_connect
 client.on_message = on_message
 
 try:
-    client.connect(BROKER, PORT, 60)
+    client.connect(consts.BROKER, consts.PORT, 60)
     
     # Start the background networking thread
     client.loop_start()
@@ -118,7 +115,7 @@ try:
     while True:
         # Generate and publish temperature every 5 seconds
         temp_val = round(random.uniform(50.0, 100.0), 2)
-        client.publish(CAMERA_TOPIC, json.dumps({"connected": True, "temperature": temp_val}), qos=0)
+        client.publish(consts.CAMERA_TOPIC, json.dumps({"connected": True, "temperature": temp_val}), qos=0)
         # print(f"Sensor Update: {temp_val}°C") # Optional log
         
         time.sleep(5)

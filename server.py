@@ -1,28 +1,9 @@
 #!/home/daniil/miniconda3/envs/opcua/bin/python
 import asyncio
 import logging
+import consts
 
 from asyncua import Server, ua
-
-HOSTNAME = "iiot-daniil"
-
-LADLE_TILT_STATE_INDEX = 0 
-RAKE_HOME_STATE_INDEX = 1
-HEAT_ID_INDEX = 0
-TIME_INDEX = 1
-PULLS_INDEX = 2
-SLAG_THRESHOLD_INDEX = 3 
-STEEL_START_INDEX = 4 
-STEEL_END_INDEX = 5 
-TOTAL_SLAG_START_INDEX = 6
-TOTAL_SLAG_END_INDEX = 7
-SOLID_SLAG_START_INDEX = 8
-SOLID_SLAG_END_INDEX = 9
-LIQUID_SLAG_START_INDEX = 10
-LIQUID_SLAG_END_INDEX = 11
-CAMERA_TEMPERATURE_INDEX = 12
-RECIPE_ID_INDEX = 13
-CAMERA_STATUS_INDEX = 0
 
 
 async def main():
@@ -30,7 +11,7 @@ async def main():
     # setup our server
     server = Server()
     await server.init()
-    server.set_endpoint(f"opc.tcp://{HOSTNAME}:4990/FactoryTalkLinxGateway/")
+    server.set_endpoint(f"opc.tcp://{consts.HOSTNAME}:4990/FactoryTalkLinxGateway/")
 
     # populating our address space
     # Creating a parent object to put all the variables under
@@ -86,13 +67,13 @@ async def main():
             flags: list = await bool_write_list.get_value()
             ids: list = await real_read_list.get_value()
             data: list = await real_write_list.get_value()
-            _logger.info(f"Current Ladle Tilt State: {states[LADLE_TILT_STATE_INDEX]}")
-            _logger.info(f"Heat ID read: {ids[HEAT_ID_INDEX]}")
-            _logger.info(f"Heat ID processed: {data[HEAT_ID_INDEX]}")
-            _logger.info(f"Total Raking Time: {data[TIME_INDEX]} seconds")
-            _logger.info(f"Number of pulls: {data[PULLS_INDEX]}")
-            _logger.info(f"Camera Connected: {flags[CAMERA_STATUS_INDEX]}")
-            _logger.info(f"Camera Temperature: {data[CAMERA_TEMPERATURE_INDEX]}")
+            _logger.info(f"Current Ladle Tilt State: {states[consts.LADLE_TILT_STATE_INDEX]}")
+            _logger.info(f"Heat ID read: {ids[consts.HEAT_ID_INDEX]}")
+            _logger.info(f"Heat ID processed: {data[consts.HEAT_ID_INDEX]}")
+            _logger.info(f"Total Raking Time: {data[consts.TIME_INDEX]} seconds")
+            _logger.info(f"Number of pulls: {data[consts.PULLS_INDEX]}")
+            _logger.info(f"Camera Connected: {flags[consts.CAMERA_STATUS_INDEX]}")
+            _logger.info(f"Camera Temperature: {data[consts.CAMERA_TEMPERATURE_INDEX]}")
 
 
 if __name__ == "__main__":
