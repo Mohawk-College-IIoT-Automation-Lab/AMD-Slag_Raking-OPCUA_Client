@@ -67,12 +67,12 @@ async def main():
             flags: list = await bool_write_list.get_value()
             ids: list = await real_read_list.get_value()
             data: list = await real_write_list.get_value()
-            _logger.info(f"Current Ladle Tilt State: {states[consts.LADLE_TILT_STATE_INDEX]}")
-            _logger.info(f"Heat ID read: {ids[consts.HEAT_ID_INDEX]}")
-            _logger.info(f"Heat ID processed: {data[consts.HEAT_ID_INDEX]}")
+            _logger.info(f"Ladle Tilted: {bool(states[consts.LADLE_TILT_STATE_INDEX])}")
+            _logger.info(f"Heat ID read: {int(ids[consts.HEAT_ID_INDEX])}")
+            _logger.info(f"Heat ID processed: {int(data[consts.HEAT_ID_INDEX])}")
             _logger.info(f"Total Raking Time: {data[consts.TIME_INDEX]} seconds")
-            _logger.info(f"Number of pulls: {data[consts.PULLS_INDEX]}")
-            _logger.info(f"Camera Connected: {flags[consts.CAMERA_STATUS_INDEX]}")
+            _logger.info(f"Number of pulls: {int(data[consts.PULLS_INDEX])}")
+            _logger.info(f"Camera Connected: {bool(flags[consts.CAMERA_STATUS_INDEX])}")
             _logger.info(f"Camera Temperature: {data[consts.CAMERA_TEMPERATURE_INDEX]}")
 
 
