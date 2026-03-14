@@ -1,23 +1,17 @@
 #!/home/daniil/miniconda3/envs/opcua/bin/python
-import paho.mqtt.client as mqtt
-import time
+import sys, os, shutil
+import asyncio, aiomqtt
 import json
 import random
-import signal
-import sys
-import os
-import shutil
-import consts
 
-from paho.mqtt.enums import CallbackAPIVersion
+import consts
 
 # Configuration
 SAVE_DIR = os.path.join(os.path.expanduser("~"), "Documents", "test_jsons")
 
 # Initialize state
 # Global variable to store the generated data
-current_data = None
-file_counter = 1
+cv_data = {}
 
 # Setup directory: Clear old ones on restart, then create fresh
 if os.path.exists(SAVE_DIR):
@@ -26,6 +20,11 @@ os.makedirs(SAVE_DIR)
 
 print(f"Files will be saved to: {SAVE_DIR}")
 
+
+# No point of making this function async because it just does math 
+# It is not waiting for any I/O 
+# It will still be performed synchronously because it is a CPU task 
+# to do math, string manipulation, or logic
 def generate_random_data():
     """Generates data based on user-specified ranges."""
     steel_start = round(random.random(), 2)
@@ -52,75 +51,70 @@ def generate_random_data():
     }
     return data
 
-def on_connect(client, userdata, flags, rc, properties):
-    if rc == 0:
-        print(f"Connected to {consts.BROKER} successfully.")
-        client.subscribe(consts.EVENT_TOPIC, qos=2)
-    else:
-        print(f"Connection failed with code {rc}")
-
-def on_message(client, userdata, msg):
-    global current_data, file_counter
-    data = msg.payload.decode("utf-8")
-    event = json.loads(data)
-
-    # event["state"] is expected to be boolean true/false
-    state = event.get("state", None)
-    
-    if state:
-        # Generate and Save
-        current_data = generate_random_data()
-        file_path = os.path.join(SAVE_DIR, f"ladle_{file_counter:02d}.json")
-        
-        with open(file_path, "w") as f:
-            json.dump(current_data, f, indent=2)
-            
-        print(f"Generated & Saved: {file_path}")
-        file_counter += 1
-        
-    elif not state:
-        # Publish
-        if current_data:
-            current_data["heat_id"] = event["heat_id"]
-            client.publish(consts.DATA_TOPIC, json.dumps(current_data), qos=2)
-            print(f"Published latest data to {consts.DATA_TOPIC}")
-            current_data = None 
-        else:
-            print("No data staged. Send 'true' first.")
-
-    else:
-        print("State key not present in message json")
-
-
-# Graceful shutdown handler
-def signal_handler(sig, frame):
-    print("\nDisconnecting from broker...")
-    client.disconnect()
-    sys.exit(0)
-
-signal.signal(signal.SIGINT, signal_handler)
-
-# Client Setup
-client = mqtt.Client(CallbackAPIVersion.VERSION2)
-client.on_connect = on_connect
-client.on_message = on_message
-
-try:
-    client.connect(consts.BROKER, consts.PORT, 60)
-    
-    # Start the background networking thread
-    client.loop_start()
-    print("Application running. Press Ctrl+C to exit.")
-
+async def publish_camera_data(client: aiomqtt.Client):
     while True:
-        # Generate and publish temperature every 5 seconds
         temp_val = round(random.uniform(50.0, 100.0), 2)
-        client.publish(consts.CAMERA_TOPIC, json.dumps({"connected": True, "temperature": temp_val}), qos=0)
-        # print(f"Sensor Update: {temp_val}°C") # Optional log
-        
-        time.sleep(5)
+        payload=json.dumps({"connected": True, "temperature": temp_val})
+        await client.publish(consts.CAMERA_TOPIC, payload, qos=0)
+        await asyncio.sleep(5)
 
-except KeyboardInterrupt:
-    signal_handler(None, None)
-except Exception as e:
-    print(f"Fatal error: {e}")
+async def on_message(client: aiomqtt.Client):
+    global cv_data
+    await client.subscribe(consts.EVENT_TOPIC, qos=2)
+    async for message in client.messages:
+        data = message.payload.decode("utf-8")
+        event = json.loads(data)
+
+        # event["state"] is expected to be boolean true/false
+        value = event.get("state")
+        state = bool(value) if value is not None else None
+        
+        if state is True:
+            # Generate and Save
+            cv_data = generate_random_data() 
+            file_path = os.path.join(SAVE_DIR, f"ladle_{event.get('heat_id', 0):02d}.json")
+            
+            with open(file_path, "w") as f:
+                json.dump(cv_data, f, indent=2)
+                
+            print(f"Generated & Saved: {file_path}")
+            
+        elif state is False:
+            # Publish
+            if cv_data:
+                cv_data["heat_id"] = event["heat_id"]
+                await client.publish(consts.DATA_TOPIC, json.dumps(cv_data), qos=2)
+                print(f"Published latest data to {consts.DATA_TOPIC}")
+                cv_data.clear()
+            else:
+                print("No data staged. Send 'true' first.")
+
+        else:
+            print("State key not present in message json")
+
+async def main():
+    try:
+        async with aiomqtt.Client(consts.BROKER) as client:
+            async with asyncio.TaskGroup() as tg:
+                tg.create_task(on_message(client))
+                tg.create_task(publish_camera_data(client))
+
+    except* aiomqtt.MqttError as eg:
+        # eg is an ExceptionGroup containing one or more MqttErrors
+        for e in eg.exceptions:
+            print(f"MQTT Error: {e}")
+    except* Exception as eg:
+        print(f"Caught exception group: {eg.exceptions}")
+        print("Disconnecting...")
+
+if __name__=="__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        # Graceful exit on Ctrl+C
+        sys.exit(0)
+
+# TODO: Read about async with, async for 
+# TODO: Read about asyncio.gather and task groups
+# TODO: Read about except*, exception groups, and asyncio.CancelledTask
+# TODO: Read about if aiofile is worth implementing
