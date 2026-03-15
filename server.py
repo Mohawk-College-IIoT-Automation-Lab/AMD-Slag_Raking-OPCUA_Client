@@ -29,7 +29,7 @@ async def main():
     bool_write_list = await ua_server.add_variable(
             nodeid="ns=2;s=[UA_server]OU_Server_IO.BOOL_Read",
             bname="[UA_server]OU_Server_IO.BOOL_Read",
-            val=[False]*96,
+            val=[False] + [True] + [False] * 94,
             varianttype=ua.VariantType.Boolean,
             )
 

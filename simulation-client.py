@@ -6,11 +6,7 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
 from PyQt6.QtCore import Qt
 from qasync import QEventLoop, asyncSlot
 from asyncua import Client, ua
-
-# Matches your server constants
-LADLE_TILT_STATE_INDEX = 0 
-HEAT_ID_INDEX = 0
-HOSTNAME = "iiot-daniil"
+import consts 
 
 class SimulationGUI(QWidget):
     def __init__(self, endpoint):
@@ -92,8 +88,8 @@ class SimulationGUI(QWidget):
                 real_values = await real_node.get_value()
 
                 # Update specific indices
-                bool_values[LADLE_TILT_STATE_INDEX] = state
-                real_values[HEAT_ID_INDEX] = float(heat_id)
+                bool_values[consts.RAKE_HOME_STATE_INDEX] = not bool(state)
+                real_values[consts.HEAT_ID_INDEX] = float(heat_id)
 
                 # Write back
                 await bool_node.set_value(bool_values, ua.VariantType.Boolean)
@@ -109,7 +105,7 @@ async def main():
     loop = QEventLoop(app)
     asyncio.set_event_loop(loop)
 
-    endpoint = f"opc.tcp://{HOSTNAME}:4990/FactoryTalkLinxGateway/"
+    endpoint = f"opc.tcp://{consts.HOSTNAME}:4990/FactoryTalkLinxGateway/"
     gui = SimulationGUI(endpoint)
     gui.show()
 

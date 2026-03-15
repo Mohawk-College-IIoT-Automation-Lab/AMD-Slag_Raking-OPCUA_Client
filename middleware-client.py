@@ -3,12 +3,8 @@ import asyncio, aiomqtt
 import consts
 import json
 from asyncua import Client, ua
-from asyncua.client.client import Subscription
-from asyncua.server import event_generator
 
 URL = f"opc.tcp://{consts.HOSTNAME}:4990/FactoryTalkLinxGateway/"
-# Set of tasks to avoid garbage collection
-background_tasks = set()
 
 class SubHandler(object):
     """
@@ -17,21 +13,28 @@ class SubHandler(object):
     def __init__(self, mqttc: aiomqtt.Client, ids) -> None:
         self.ids_node = ids
         self.mqttc = mqttc
+        # Set of tasks to avoid garbage collection
+        self.background_tasks = set()
+        self.last_state = None
+
 
     def datachange_notification(self, node, val, data):
         '''
         The method that is called whenever a data change event occurs in the OPC UA server.
         '''
         task = asyncio.create_task(self.handle_change(val))
-        background_tasks.add(task)
-        task.add_done_callback(background_tasks.discard)
+        self.background_tasks.add(task)
+        task.add_done_callback(self.background_tasks.discard)
 
     async def handle_change(self, val):
-        tilt_state = val[consts.LADLE_TILT_STATE_INDEX]
-        print(f"Raking in progress: {tilt_state}")
+        state = not bool(val[consts.RAKE_HOME_STATE_INDEX])
+        if state == self.last_state:
+            return
+        self.last_state = state
+        print(f"Raking in progress: {state}")
         process_ids = await self.ids_node.get_value()
         heat_id = int(process_ids[consts.HEAT_ID_INDEX])
-        event: dict = {"heat_id": heat_id, "state": tilt_state}
+        event: dict = {"heat_id": heat_id, "state": state}
         await self.mqttc.publish(consts.EVENT_TOPIC, json.dumps(event), qos=2)
 
 async def handle_mqtt_messages(mqtt_client: aiomqtt.Client, opc_data_node, opc_flags_node):
