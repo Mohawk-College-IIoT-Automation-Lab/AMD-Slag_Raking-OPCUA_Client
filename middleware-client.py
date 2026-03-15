@@ -7,6 +7,8 @@ from asyncua.client.client import Subscription
 from asyncua.server import event_generator
 
 URL = f"opc.tcp://{consts.HOSTNAME}:4990/FactoryTalkLinxGateway/"
+# Set of tasks to avoid garbage collection
+background_tasks = set()
 
 class SubHandler(object):
     """
@@ -20,22 +22,17 @@ class SubHandler(object):
         '''
         The method that is called whenever a data change event occurs in the OPC UA server.
         '''
-        asyncio.create_task(self.handle_change(val))
+        task = asyncio.create_task(self.handle_change(val))
+        background_tasks.add(task)
+        task.add_done_callback(background_tasks.discard)
 
     async def handle_change(self, val):
         tilt_state = val[consts.LADLE_TILT_STATE_INDEX]
         print(f"Raking in progress: {tilt_state}")
         process_ids = await self.ids_node.get_value()
         heat_id = int(process_ids[consts.HEAT_ID_INDEX])
-        if tilt_state: # raking has stated
-            # Publish to raking event topic that the raking has started and is in process
-            event: dict = {"heat_id": heat_id, "state": tilt_state}
-            await self.mqttc.publish(consts.EVENT_TOPIC, json.dumps(event), qos=2)
-
-        else:
-            # Publish to raking event topic that the raking has completed
-            event: dict = {"heat_id": heat_id, "state": tilt_state}
-            await self.mqttc.publish(consts.EVENT_TOPIC, json.dumps(event), qos=2)
+        event: dict = {"heat_id": heat_id, "state": tilt_state}
+        await self.mqttc.publish(consts.EVENT_TOPIC, json.dumps(event), qos=2)
 
 async def handle_mqtt_messages(mqtt_client: aiomqtt.Client, opc_data_node, opc_flags_node):
     await mqtt_client.subscribe(consts.DATA_TOPIC, qos=2)
@@ -63,7 +60,7 @@ async def handle_mqtt_messages(mqtt_client: aiomqtt.Client, opc_data_node, opc_f
                     real_values[consts.LIQUID_SLAG_END_INDEX] = mqtt_data["overall"]["liquid_slag_pct_end"]
                     real_values[consts.SLAG_START_INDEX] = mqtt_data["overall"]["slag_index_start"]
                     real_values[consts.SLAG_END_INDEX] = mqtt_data["overall"]["slag_index_end"]
-                    print(f"Raking for heat id {mqtt_data["heat_id"]} took {mqtt_data["total_time_seconds"]}s and required {mqtt_data["num_pulls"]} pulls")
+                    print(f"Raking for heat id {mqtt_data['heat_id']} took {mqtt_data['total_time_seconds']}s and required {mqtt_data['num_pulls']} pulls")
 
             elif message.topic.value == consts.CAMERA_TOPIC:
                     real_values[consts.CAMERA_TEMPERATURE_INDEX] = mqtt_data["temperature"]
