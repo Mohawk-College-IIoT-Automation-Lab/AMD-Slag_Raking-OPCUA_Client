@@ -3,8 +3,10 @@ import sys, os, shutil
 import asyncio, aiomqtt
 import json
 import random
-
 import consts
+
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 # Configuration
 SAVE_DIR = os.path.join(os.path.expanduser("~"), "Documents", "test_jsons")

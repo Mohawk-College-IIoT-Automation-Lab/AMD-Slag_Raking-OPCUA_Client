@@ -2,7 +2,11 @@
 import asyncio, aiomqtt
 import consts
 import json
+import sys
 from asyncua import Client, ua
+
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
 URL = f"opc.tcp://{consts.HOSTNAME}:4990/FactoryTalkLinxGateway/"
 
