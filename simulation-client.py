@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (QApplication, QWidget, QVBoxLayout, QHBoxLayout,
                              QPushButton, QLineEdit, QLabel, QTextEdit)
 from PyQt6.QtCore import Qt
 from qasync import QEventLoop, asyncSlot
-from asyncua import Client, ua
+from asyncua import Client, ua, Node
 import consts 
 
 class SimulationGUI(QWidget):
@@ -80,20 +80,12 @@ class SimulationGUI(QWidget):
         try:
             async with Client(self.endpoint) as client:
                 # Get Node References
-                bool_node = client.get_node("ns=2;s=[UA_server]OU_Server_IO.BOOL_Write")
-                real_node = client.get_node("ns=2;s=[UA_server]OU_Server_IO.REAL_Write")
-
-                # Read current arrays
-                bool_values = await bool_node.get_value()
-                real_values = await real_node.get_value()
-
-                # Update specific indices
-                bool_values[consts.RAKE_HOME_STATE_INDEX] = not bool(state)
-                real_values[consts.HEAT_ID_INDEX] = float(heat_id)
+                rake_state_node : Node = client.get_node(consts.RAKE_HOME_STATE_NODEID)
+                heat_id_node : Node = client.get_node(consts.HEAT_ID_NODEID)
 
                 # Write back
-                await bool_node.set_value(bool_values, ua.VariantType.Boolean)
-                await real_node.set_value(real_values, ua.VariantType.Double)
+                await rake_state_node.set_value(not bool(state), ua.VariantType.Boolean)
+                await heat_id_node.set_value(float(heat_id), ua.VariantType.Double)
                 
                 self.log(f"Success: State={state}, HeatID={heat_id} written to server.")
         
@@ -105,8 +97,7 @@ async def main():
     loop = QEventLoop(app)
     asyncio.set_event_loop(loop)
 
-    endpoint = f"opc.tcp://{consts.HOSTNAME}:4990/FactoryTalkLinxGateway/"
-    gui = SimulationGUI(endpoint)
+    gui = SimulationGUI(consts.ENDPOINT)
     gui.show()
 
     with loop:
