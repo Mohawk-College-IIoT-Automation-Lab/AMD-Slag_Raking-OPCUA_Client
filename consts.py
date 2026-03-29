@@ -1,0 +1,38 @@
+HOSTNAME = "iiot-daniil"
+
+ENDPOINT =f"opc.tcp://{HOSTNAME}:4990/FactoryTalkLinxGateway/" 
+
+# BOOL.Write node ids
+LADLE_TILT_STATE_NODEID = "ns=2;s=[UA_server]OU_Server_IO.BOOL_Write[00]"
+RAKE_HOME_STATE_NODEID = "ns=2;s=[UA_server]OU_Server_IO.BOOL_Write[01]"
+
+# BOOL.Read indexes
+CAMERA_STATUS_NODEID = "ns=2;s=[UA_server]OU_Server_IO.BOOL_Read[00]"
+
+# REAL.Write node ids
+HEAT_ID_NODEID = "ns=2;s=[UA_server]OU_Server_IO.REAL_Write[00]"
+
+# REAL.Read arrray indexes
+HEAT_ID_INDEX = 0
+TIME_INDEX = 1
+PULLS_INDEX = 2 
+STEEL_START_INDEX = 3 
+STEEL_END_INDEX = 4 
+TOTAL_SLAG_START_INDEX = 5
+TOTAL_SLAG_END_INDEX = 6
+SOLID_SLAG_START_INDEX = 7
+SOLID_SLAG_END_INDEX = 8
+LIQUID_SLAG_START_INDEX = 9
+LIQUID_SLAG_END_INDEX = 10
+SLAG_START_INDEX = 11
+SLAG_END_INDEX = 12
+CAMERA_TEMPERATURE_INDEX = 13
+
+
+
+# MQTT
+BROKER = "localhost"
+PORT = 1883
+EVENT_TOPIC = "raking/events"
+DATA_TOPIC = "raking/data"
+CAMERA_TOPIC = "raking/camera"
