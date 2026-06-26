@@ -6,7 +6,24 @@ import sys
 import logging
 from asyncua import Client, ua, Node
 
-logging.basicConfig(format='%(levelname)s: %(message)s [%(asctime)s]', datefmt='%Y/%m/%d %H:%M:%S', level=logging.INFO, handlers= [logging.FileHandler("logs.log"), logging.StreamHandler(sys.stdout)])
+logger = logging.getLogger(__name__)
+logger.setLevel("DEBUG")
+console_handler = logging.StreamHandler(sys.stdout)
+console_handler.setLevel("DEBUG")
+file_handler = logging.FileHandler("logs.log")
+file_handler.setLevel("INFO")
+logger.addHandler(console_handler)
+logger.addHandler(file_handler)
+formatter = logging.Formatter(
+    '%(levelname)s: %(message)s [%(asctime)s]',
+    datefmt='%Y/%m/%d %H:%M:%S'
+        )
+
+for handler in logger.handlers:
+    handler.setFormatter(formatter)
+
+
+# logging.basicConfig(format='%(levelname)s: %(message)s [%(asctime)s]', datefmt='%Y/%m/%d %H:%M:%S', level=logging.INFO, handlers= [logging.FileHandler("logs.log"), logging.StreamHandler(sys.stdout)])
 
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -37,19 +54,20 @@ class SubHandler(object):
             if state == self.last_state:
                 return
             self.last_state = state
-            logging.info(f"Raking in progress: {state}")
+            logger.info(f"Raking in progress: {state}")
             process_id = int(await self.heat_id.get_value())
             event: dict = {"heat_id": process_id, "state": state}
             await self.mqttc.publish(consts.EVENT_TOPIC, json.dumps(event), qos=2)
+            logger.debug(f"Published message to {consts.EVENT_TOPIC}: {event}")
         except ua.uaerrors.BadNodeIdUnknown as e:
-            logging.error(f"{e}. Node {self.heat_id} doesn't exist")
+            logger.error(f"{e}. Node {self.heat_id} doesn't exist")
         except Exception:
-            logging.error(f"Unexpected failure during OPC UA handle change callback", exc_info=True)
+            logger.error(f"Unexpected failure during OPC UA handle change callback", exc_info=True)
 
 async def handle_mqtt_messages(mqtt_client: aiomqtt.Client, data_nodes: list[Node], camera_connection_node: Node):
     await mqtt_client.subscribe(consts.DATA_TOPIC, qos=2)
     await mqtt_client.subscribe(consts.CAMERA_TOPIC, qos=2)
-    logging.info(f"Subscribed to {consts.DATA_TOPIC} and {consts.CAMERA_TOPIC} topics")
+    logger.info(f"Subscribed to {consts.DATA_TOPIC} and {consts.CAMERA_TOPIC} topics")
 
     async for message in mqtt_client.messages:
         try:
@@ -73,37 +91,44 @@ async def handle_mqtt_messages(mqtt_client: aiomqtt.Client, data_nodes: list[Nod
                     process_results[consts.LIQUID_SLAG_END_INDEX] = mqtt_data["overall"]["liquid_slag_pct_end"]
                     process_results[consts.SLAG_START_INDEX] = mqtt_data["overall"]["slag_index_start"]
                     process_results[consts.SLAG_END_INDEX] = mqtt_data["overall"]["slag_index_end"]
-                    logging.info(f"Raking for heat id {mqtt_data['heat_id']} took {mqtt_data['total_time_seconds']}s and required {mqtt_data['num_pulls']} pulls")
+                    logger.debug(f"Received message on {consts.DATA_TOPIC}: {mqtt_data}")
+                    logger.info(f"Raking for heat id {mqtt_data['heat_id']} took {mqtt_data['total_time_seconds']}s and required {mqtt_data['num_pulls']} pulls")
 
             elif message.topic.value == consts.CAMERA_TOPIC:
                     process_results[consts.CAMERA_TEMPERATURE_INDEX] = mqtt_data["temperature"]
+                    logger.debug(f"Received message on {consts.CAMERA_TOPIC}: {mqtt_data}")
 
             for idx, result in enumerate(process_results):
                 await data_nodes[idx].set_value(value=result, varianttype=ua.VariantType.Double)
 
-            logging.info(f"Successfully wrote the result to OPC UA server: {mqtt_data}")
+
+            if message.topic.value == consts.DATA_TOPIC:
+                logger.info(f"Successfully wrote data to OPC UA server: {process_results}")
+
+            elif message.topic.value == consts.CAMERA_TOPIC:
+                logger.debug(f"Successfully wrote data to OPC UA server: {process_results}")
 
 
         except KeyError as e:
-            logging.error(f"Missing expected key {e} on topic: {message.topic.value}")
+            logger.error(f"Missing expected key {e} on topic: {message.topic.value}")
         except ValueError as e:
-            logging.error(f"Data type conversion failed: {e}")
+            logger.error(f"Data type conversion failed: {e}")
         except ua.uaerrors.BadNodeIdUnknown as e:
-            logging.error(f"Unknown Node ID error: {e}")
+            logger.error(f"Unknown Node ID error: {e}")
         except ua.UaStatusCodeError:
-            logging.error(f"Failed to write to OPC", exc_info=True)
+            logger.error(f"Failed to write to OPC", exc_info=True)
         except Exception:
-            logging.error(f"Unexpected failure during MQTT message handling", exc_info=True)
+            logger.error(f"Unexpected failure during MQTT message handling", exc_info=True)
 
 async def main():
     try:
-        logging.info(f"Connecting to MQTT Broker at {consts.BROKER}")
+        logger.info(f"Connecting to MQTT Broker at {consts.BROKER}")
         async with aiomqtt.Client(consts.BROKER, consts.PORT) as mqtt_client:
-            logging.info(f"Connected to MQTT Broker")
+            logger.info(f"Connected to MQTT Broker")
 
-            logging.info(f"Connecting to OPC Server at {consts.ENDPOINT} ...")
+            logger.info(f"Connecting to OPC Server at {consts.ENDPOINT} ...")
             async with Client(url=consts.ENDPOINT) as opc_client:
-                logging.info(f"Connected to OPC Server")
+                logger.info(f"Connected to OPC Server")
 
                 rake_home_node : Node = opc_client.get_node(consts.RAKE_HOME_STATE_NODEID)
                 heat_id_node : Node  = opc_client.get_node(consts.HEAT_ID_NODEID)
@@ -112,18 +137,18 @@ async def main():
 
                 handler = SubHandler(mqttc=mqtt_client, heat_id=heat_id_node)
                 subscription = await opc_client.create_subscription(1000, handler)
-                logging.info("Subscription active. Waiting for state changes...")
+                logger.info("Subscription active. Waiting for state changes...")
 
                 await subscription.subscribe_data_change(rake_home_node)
                 await handle_mqtt_messages(mqtt_client, data_nodes, camera_connection_node)
     except ua.UaStatusCodeError as e:
-        logging.critical(f"Error while subscribing to OPC UA tag data changes: {e}")
+        logger.critical(f"Error while subscribing to OPC UA tag data changes: {e}")
     except ua.UaError:
-        logging.critical("Error while connecting to OPC UA server", exc_info=True)
+        logger.critical("Error while connecting to OPC UA server", exc_info=True)
     except aiomqtt.MqttError:
-        logging.critical("Error while connecting to MQTT Broker", exc_info=True)
+        logger.critical("Error while connecting to MQTT Broker", exc_info=True)
     except Exception:
-        logging.critical("Unexpected error during startup", exc_info=True)
+        logger.critical("Unexpected error during startup", exc_info=True)
 
 
 if __name__ == "__main__":
