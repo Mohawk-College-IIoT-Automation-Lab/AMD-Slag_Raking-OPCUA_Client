@@ -56,7 +56,7 @@ def generate_random_data():
 async def publish_camera_data(client: aiomqtt.Client):
     while True:
         temp_val = round(random.uniform(50.0, 100.0), 2)
-        payload=json.dumps({"connected": True, "temperature": temp_val})
+        payload=json.dumps({"sensor": temp_val, "name": "TSHouse", "unit": "C"})
         await client.publish(consts.CAMERA_TOPIC, payload, qos=0)
         await asyncio.sleep(5)
 

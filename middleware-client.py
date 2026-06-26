@@ -6,6 +6,8 @@ import sys
 import logging
 from asyncua import Client, ua, Node
 
+# Configuring custom logger
+# Amazing tutorial: https://realpython.com/python-logging/
 logger = logging.getLogger(__name__)
 logger.setLevel("DEBUG")
 console_handler = logging.StreamHandler(sys.stdout)
@@ -22,8 +24,6 @@ formatter = logging.Formatter(
 for handler in logger.handlers:
     handler.setFormatter(formatter)
 
-
-# logging.basicConfig(format='%(levelname)s: %(message)s [%(asctime)s]', datefmt='%Y/%m/%d %H:%M:%S', level=logging.INFO, handlers= [logging.FileHandler("logs.log"), logging.StreamHandler(sys.stdout)])
 
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
@@ -95,7 +95,7 @@ async def handle_mqtt_messages(mqtt_client: aiomqtt.Client, data_nodes: list[Nod
                     logger.info(f"Raking for heat id {mqtt_data['heat_id']} took {mqtt_data['total_time_seconds']}s and required {mqtt_data['num_pulls']} pulls")
 
             elif message.topic.value == consts.CAMERA_TOPIC:
-                    process_results[consts.CAMERA_TEMPERATURE_INDEX] = mqtt_data["temperature"]
+                    process_results[consts.CAMERA_TEMPERATURE_INDEX] = mqtt_data["sensor"]
                     logger.debug(f"Received message on {consts.CAMERA_TOPIC}: {mqtt_data}")
 
             for idx, result in enumerate(process_results):
