@@ -74,6 +74,7 @@ async def handle_mqtt_messages(mqtt_client: aiomqtt.Client, data_nodes: list[Nod
             payload = message.payload.decode()
             mqtt_data = json.loads(payload)
             process_results = [await node.get_value() for node in data_nodes]
+            logger.debug(f"Received message on {message.topic.value}: {mqtt_data}")
 
             if message.topic.value == consts.DATA_TOPIC:
                     # TODO: check that the heat id is the same as the one read and passed
@@ -91,12 +92,10 @@ async def handle_mqtt_messages(mqtt_client: aiomqtt.Client, data_nodes: list[Nod
                     process_results[consts.LIQUID_SLAG_END_INDEX] = mqtt_data["overall"]["liquid_slag_pct_end"]
                     process_results[consts.SLAG_START_INDEX] = mqtt_data["overall"]["slag_index_start"]
                     process_results[consts.SLAG_END_INDEX] = mqtt_data["overall"]["slag_index_end"]
-                    logger.debug(f"Received message on {consts.DATA_TOPIC}: {mqtt_data}")
                     logger.info(f"Raking for heat id {mqtt_data['heat_id']} took {mqtt_data['total_time_seconds']}s and required {mqtt_data['num_pulls']} pulls")
 
             elif message.topic.value == consts.CAMERA_TOPIC:
                     process_results[consts.CAMERA_TEMPERATURE_INDEX] = mqtt_data["sensor"]
-                    logger.debug(f"Received message on {consts.CAMERA_TOPIC}: {mqtt_data}")
 
             for idx, result in enumerate(process_results):
                 await data_nodes[idx].set_value(value=result, varianttype=ua.VariantType.Double)
