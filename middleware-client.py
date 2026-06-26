@@ -58,7 +58,7 @@ class SubHandler(object):
             process_id = int(await self.heat_id.get_value())
             event: dict = {"heat_id": process_id, "state": state}
             await self.mqttc.publish(consts.EVENT_TOPIC, json.dumps(event), qos=2)
-            logger.debug(f"Published message to {consts.EVENT_TOPIC}: {event}")
+            logger.info(f"Published message to {consts.EVENT_TOPIC}: {event}")
         except ua.uaerrors.BadNodeIdUnknown as e:
             logger.error(f"{e}. Node {self.heat_id} doesn't exist")
         except Exception:
