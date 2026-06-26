@@ -1,6 +1,6 @@
 HOSTNAME = "iiot-daniil"
 
-ENDPOINT =f"opc.tcp://{HOSTNAME}:4990/FactoryTalkLinxGateway/" 
+ENDPOINT =f"opc.tcp://{HOSTNAME}:4990/FactoryTalkLinxGateway" 
 
 # BOOL.Write node ids
 LADLE_TILT_STATE_NODEID = "ns=2;s=[UA_server]OU_Server_IO.BOOL_Write[00]"
@@ -35,4 +35,4 @@ BROKER = "localhost"
 PORT = 1883
 EVENT_TOPIC = "raking/events"
 DATA_TOPIC = "raking/data"
-CAMERA_TOPIC = "raking/camera"
+CAMERA_TOPIC = "FLIR/ec501-04F834/tempsensor1"

@@ -114,10 +114,6 @@ async def handle_mqtt_messages(
                 process_results[consts.CAMERA_TEMPERATURE_INDEX] = mqtt_data[
                     "temperature"
                 ]
-                camera_connected = mqtt_data["connected"]
-                await camera_connection_node.set_value(
-                    value=camera_connected, varianttype=ua.VariantType.Boolean
-                )
 
             for idx, result in enumerate(process_results):
                 await data_nodes[idx].set_value(
